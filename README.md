@@ -2,3 +2,4 @@
 Wumpus World
 
 This is a an edit I made on the terminal
+Tej is very confused
