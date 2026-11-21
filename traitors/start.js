@@ -20,12 +20,13 @@ const explicitPort = arg('port') || process.env.PORT;
 const port = Number(explicitPort || 3000);
 const dataDir = path.resolve(arg('data') || process.env.TRAITORS_DATA_DIR || path.join(__dirname, 'data'));
 const adminPassword = arg('password') || process.env.TRAITORS_ADMIN_PASSWORD;
+const publicUrl = arg('public-url') || process.env.TRAITORS_PUBLIC_URL;
 
 // Keep the game alive no matter what: log unexpected errors instead of exiting.
 process.on('uncaughtException', (err) => console.error('[uncaught]', err));
 process.on('unhandledRejection', (err) => console.error('[unhandled]', err));
 
-const app = createApp({ dataDir, adminPassword });
+const app = createApp({ dataDir, adminPassword, publicUrl });
 
 app
   .start({ port, tryNextPorts: explicitPort ? 0 : 10 })
@@ -35,6 +36,7 @@ app
     const line = '='.repeat(64);
     console.log(`\n${line}\n  THE TRAITORS — game server is running\n${line}`);
     console.log(`\n  Players join at:   ${main}`);
+    if (!publicUrl) console.log('                     (or your tunnel link, e.g. https://xxxx.trycloudflare.com)');
     for (const u of urls.slice(1)) console.log(`                     ${u}   (other network)`);
     console.log(`  Host / admin:      ${main}admin`);
     console.log(`  TV / big screen:   ${main}screen`);

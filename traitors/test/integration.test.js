@@ -419,7 +419,7 @@ test('admin password is generated once and remembered', async () => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'traitors-pw-'));
   const a1 = createApp({ dataDir, log: quiet });
   const pw = a1.adminPassword;
-  assert.match(pw, /^[a-z]+-\d{4}$/);
+  assert.match(pw, /^[a-z]+-[a-z]+-\d{6}$/);
   await a1.stop();
   const a2 = createApp({ dataDir, log: quiet });
   assert.equal(a2.adminPassword, pw);
@@ -459,4 +459,92 @@ test('port fallback: a busy port moves on to the next one', async (t) => {
   t.after(() => app.stop());
   const port = await app.start({ port: busy, host: '127.0.0.1', tryNextPorts: 5 });
   assert.notEqual(port, busy);
+});
+
+// Raw request so tests can set Host / tunnel headers exactly.
+function raw(port, { method = 'GET', path: p = '/', headers = {}, body } = {}) {
+  return new Promise((resolve, reject) => {
+    const req = http.request({ host: '127.0.0.1', port, method, path: p, headers }, (res) => {
+      let data = '';
+      res.on('data', (c) => (data += c));
+      res.on('end', () => resolve({ status: res.statusCode, data: data ? JSON.parse(data) : null }));
+    });
+    req.on('error', reject);
+    if (body !== undefined) req.end(JSON.stringify(body));
+    else req.end();
+  });
+}
+
+test('admin password: lockout after repeated wrong guesses, per client', async (t) => {
+  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'traitors-lock-'));
+  let clock = 1_000_000;
+  const app = createApp({ dataDir, adminPassword: PASSWORD, log: quiet, now: () => clock, adminMaxFailures: 3, adminLockoutMs: 60_000 });
+  const port = await app.start({ port: 0, host: '127.0.0.1' });
+  t.after(() => app.stop());
+  const login = (password, ip) =>
+    raw(port, {
+      method: 'POST',
+      path: '/api/admin/login',
+      headers: { 'Content-Type': 'application/json', ...(ip ? { 'CF-Connecting-IP': ip } : {}) },
+      body: { password },
+    });
+
+  // Attacker via the tunnel
+  for (let i = 0; i < 3; i++) assert.equal((await login('guess' + i, '203.0.113.9')).status, 401);
+  const locked = await login(PASSWORD, '203.0.113.9');
+  assert.equal(locked.status, 429, 'even the right password is refused while locked out');
+  assert.match(locked.data.error, /Too many/);
+  // Admin-key header guesses count too
+  const header = await raw(port, { path: '/api/admin/state', headers: { 'X-Admin-Key': PASSWORD, 'CF-Connecting-IP': '203.0.113.9' } });
+  assert.equal(header.status, 429);
+
+  // Other people (another tunnel visitor, the host on the Mac itself) are unaffected
+  assert.equal((await login(PASSWORD, '198.51.100.7')).status, 200);
+  assert.equal((await login(PASSWORD)).status, 200);
+  assert.equal((await raw(port, { path: '/api/admin/state', headers: { 'X-Admin-Key': PASSWORD } })).status, 200);
+
+  // Lockout expires
+  clock += 61_000;
+  assert.equal((await login(PASSWORD, '203.0.113.9')).status, 200);
+
+  // A correct login resets the counter
+  for (let i = 0; i < 2; i++) await login('nope', '192.0.2.50');
+  assert.equal((await login(PASSWORD, '192.0.2.50')).status, 200);
+  for (let i = 0; i < 2; i++) assert.equal((await login('nope', '192.0.2.50')).status, 401);
+  assert.equal((await login(PASSWORD, '192.0.2.50')).status, 200);
+});
+
+test('join link and QR use the tunnel address when opened through a tunnel', async (t) => {
+  const c = await boot();
+  t.after(() => c.stop());
+  const port = c.app.port;
+  const viaTunnel = await raw(port, {
+    path: '/api/screen',
+    headers: { Host: 'quiet-river-1234.trycloudflare.com', 'X-Forwarded-Proto': 'https', 'CF-Connecting-IP': '203.0.113.1' },
+  });
+  assert.equal(viaTunnel.data.joinUrls[0], 'https://quiet-river-1234.trycloudflare.com/');
+  const admin = await raw(port, {
+    path: '/api/admin/state',
+    headers: { Host: 'quiet-river-1234.trycloudflare.com', 'X-Forwarded-Proto': 'https', 'X-Admin-Key': PASSWORD },
+  });
+  assert.equal(admin.data.joinUrls[0], 'https://quiet-river-1234.trycloudflare.com/');
+  // Opened on the home network by IP or localhost: no public link is invented
+  for (const host of [`127.0.0.1:${port}`, `localhost:${port}`, `192.168.1.20:${port}`, 'mac-mini.local:3000', 'evil host']) {
+    const r = await raw(port, { path: '/api/screen', headers: { Host: host } });
+    assert.ok(r.data.joinUrls.every((u) => !u.startsWith('https://')), host);
+  }
+});
+
+test('a configured public URL is always listed first', async (t) => {
+  const app = createApp({
+    dataDir: fs.mkdtempSync(path.join(os.tmpdir(), 'traitors-pub-')),
+    adminPassword: PASSWORD,
+    log: quiet,
+    publicUrl: 'https://traitors.example.com',
+  });
+  const port = await app.start({ port: 0, host: '127.0.0.1' });
+  t.after(() => app.stop());
+  const r = await raw(port, { path: '/api/screen' });
+  assert.equal(r.data.joinUrls[0], 'https://traitors.example.com/');
+  assert.equal(app.joinUrls()[0], 'https://traitors.example.com/');
 });

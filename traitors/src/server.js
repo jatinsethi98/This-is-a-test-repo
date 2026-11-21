@@ -44,8 +44,34 @@ function lanAddresses() {
 }
 
 function generatePassword() {
-  const words = ['raven', 'cloak', 'dagger', 'castle', 'turret', 'shadow', 'goblet', 'banner', 'lantern', 'velvet'];
-  return `${words[crypto.randomInt(words.length)]}-${crypto.randomInt(1000, 10000)}`;
+  const words = ['raven', 'cloak', 'dagger', 'castle', 'turret', 'shadow', 'goblet', 'banner', 'lantern', 'velvet',
+    'candle', 'chalice', 'crypt', 'falcon', 'hound', 'manor', 'mirror', 'oath', 'poison', 'riddle'];
+  const pick = () => words[crypto.randomInt(words.length)];
+  return `${pick()}-${pick()}-${crypto.randomInt(100000, 1000000)}`;
+}
+
+function isLoopback(addr) {
+  return addr === '127.0.0.1' || addr === '::1' || addr === '::ffff:127.0.0.1';
+}
+
+// The real client address. Requests arriving through a tunnel (cloudflared,
+// ngrok) come from localhost, so for those we trust the tunnel's header.
+function clientIp(req) {
+  const remote = (req.socket && req.socket.remoteAddress) || '';
+  if (isLoopback(remote)) {
+    const fwd = req.headers['cf-connecting-ip'] || String(req.headers['x-forwarded-for'] || '').split(',')[0];
+    if (typeof fwd === 'string' && fwd.trim()) return fwd.trim();
+  }
+  return remote;
+}
+
+// A Host header that is a real domain name (not an IP or localhost), e.g. a tunnel URL.
+function publicHost(req) {
+  const host = String(req.headers.host || '').trim().toLowerCase();
+  if (!/^[a-z0-9.-]+(:\d+)?$/.test(host)) return null;
+  const name = host.replace(/:\d+$/, '');
+  if (name === 'localhost' || name.endsWith('.local') || /^[\d.]+$/.test(name) || !name.includes('.')) return null;
+  return host;
 }
 
 function safeEqual(a, b) {
@@ -67,6 +93,36 @@ function createApp(options = {}) {
   }
 
   const game = new Game(store.load(), { now });
+  const rawPublicUrl = String(options.publicUrl || process.env.TRAITORS_PUBLIC_URL || '').trim();
+  const publicUrl = /^https?:\/\/[^\s/]+/i.test(rawPublicUrl) ? rawPublicUrl.replace(/\/*$/, '/') : '';
+  if (rawPublicUrl && !publicUrl) log.warn(`[server] ignoring public URL "${rawPublicUrl}" (it must start with http:// or https://)`);
+
+  // Brute-force protection for the admin password: after too many wrong
+  // attempts from one address, that address is locked out for a while.
+  const maxFailures = options.adminMaxFailures || 10;
+  const lockoutMs = options.adminLockoutMs || 10 * 60 * 1000;
+  const failures = new Map();
+
+  function checkAdminPassword(req, candidate) {
+    const ip = clientIp(req);
+    const t = now();
+    let f = failures.get(ip);
+    if (f && t - f.first > lockoutMs) {
+      failures.delete(ip);
+      f = null;
+    }
+    if (f && f.count >= maxFailures) {
+      throw new GameError('Too many wrong passwords. Wait 10 minutes and try again.', 429);
+    }
+    if (typeof candidate === 'string' && candidate.length > 0 && safeEqual(candidate, adminPassword)) {
+      failures.delete(ip);
+      return;
+    }
+    if (!f) failures.set(ip, (f = { count: 0, first: t }));
+    f.count += 1;
+    if (f.count === maxFailures) log.warn(`[security] admin login locked for ${ip} after ${maxFailures} wrong passwords`);
+    throw new GameError('Wrong admin password.', 401);
+  }
   let port = null;
 
   function persist() {
@@ -77,6 +133,8 @@ function createApp(options = {}) {
   const ticker = setInterval(() => {
     try {
       if (game.tick()) persist();
+      const t = now();
+      for (const [ip, f] of failures) if (t - f.first > lockoutMs) failures.delete(ip);
     } catch (err) {
       log.error('[tick]', err);
     }
@@ -123,13 +181,22 @@ function createApp(options = {}) {
     });
   }
 
-  function joinUrls() {
-    return lanAddresses().map((ip) => `http://${ip}:${port}/`);
+  // Links shown for joining. A configured public URL, or the domain the page
+  // was opened on (e.g. a Cloudflare tunnel), comes first; then home-network addresses.
+  function joinUrls(req) {
+    const urls = [];
+    if (publicUrl) urls.push(publicUrl);
+    const host = req && publicHost(req);
+    if (host) {
+      const proto = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https' || req.headers['cf-visitor'] ? 'https' : 'http';
+      urls.push(`${proto}://${host}/`);
+    }
+    for (const ip of lanAddresses()) urls.push(`http://${ip}:${port}/`);
+    return [...new Set(urls)];
   }
 
-  function isAdmin(req) {
-    const key = req.headers['x-admin-key'];
-    return typeof key === 'string' && key.length > 0 && safeEqual(key, adminPassword);
+  function requireAdmin(req) {
+    checkAdminPassword(req, req.headers['x-admin-key']);
   }
 
   function serveStatic(req, res, pathname) {
@@ -157,11 +224,11 @@ function createApp(options = {}) {
       return send(res, 200, { ...game.playerView(token), serverNow: now() });
     }
     if (method === 'GET' && pathname === '/api/screen') {
-      return send(res, 200, { ...game.screenView(), joinUrls: joinUrls(), serverNow: now() });
+      return send(res, 200, { ...game.screenView(), joinUrls: joinUrls(req), serverNow: now() });
     }
     if (method === 'GET' && pathname === '/api/admin/state') {
-      if (!isAdmin(req)) throw new GameError('Wrong admin password.', 401);
-      return send(res, 200, { ...game.adminView(), joinUrls: joinUrls(), serverNow: now() });
+      requireAdmin(req);
+      return send(res, 200, { ...game.adminView(), joinUrls: joinUrls(req), serverNow: now() });
     }
 
     if (method !== 'POST') throw new GameError('Not found.', 404);
@@ -185,12 +252,10 @@ function createApp(options = {}) {
         result = game.respondRecruit(token, body.accept);
         break;
       case '/api/admin/login':
-        if (typeof body.password !== 'string' || !safeEqual(body.password, adminPassword)) {
-          throw new GameError('Wrong admin password.', 401);
-        }
+        checkAdminPassword(req, body.password);
         return send(res, 200, { ok: true });
       case '/api/admin/action': {
-        if (!isAdmin(req)) throw new GameError('Wrong admin password.', 401);
+        requireAdmin(req);
         const { action, params } = body;
         if (typeof action !== 'string' || !ADMIN_ACTIONS.includes(action)) {
           throw new GameError(`Unknown action: ${String(action)}`, 400);
@@ -302,4 +367,4 @@ function createApp(options = {}) {
   };
 }
 
-module.exports = { createApp, lanAddresses };
+module.exports = { createApp, lanAddresses, clientIp, publicHost };

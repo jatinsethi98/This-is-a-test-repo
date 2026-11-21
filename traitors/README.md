@@ -31,6 +31,51 @@ The terminal prints something like this:
 3. **Keep the laptop awake and plugged in**, and keep the terminal window open.
 4. Do a test run: join from your own phone, then open `/admin` and `/screen`.
 
+## Host it on an always-on Mac (players can join from anywhere)
+
+A Mac that stays on (like a Mac mini) can run the game around the clock. A free [Cloudflare quick tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/do-more-with-tunnels/trycloudflare/) gives it a public `https://…trycloudflare.com` link. Players can then join from any Wi-Fi or mobile data. No Cloudflare account, domain or router setup is needed.
+
+**One-time setup on the Mac** (in Terminal):
+
+```bash
+# 1. Install Homebrew if you don't have it: https://brew.sh   then:
+brew install node cloudflared git
+
+# 2. Get the app
+git clone https://github.com/jatinsethi98/This-is-a-test-repo.git ~/traitors-game
+cd ~/traitors-game/traitors
+# (until this is merged into main, add:  git checkout claude/brave-meitner-gk80rz)
+
+# 3. Install it as a background service, with a strong admin password of your choice
+./deploy/mac/traitors.sh install --password pick-a-long-password-here
+```
+
+The script prints the public link, plus `/admin` and `/screen` versions of it.
+
+From then on, the server and tunnel start by themselves when the Mac starts, and restart if they crash.
+
+**On game night:** run `./deploy/mac/traitors.sh status` to get the current link and share it. ⚠️ The free link **changes every time the tunnel restarts**, for example after a reboot or power cut, so always check `status` before a game.
+
+Other commands:
+
+```bash
+./deploy/mac/traitors.sh status      # is it running? what's the link and password?
+./deploy/mac/traitors.sh restart     # restart both (gives a new link)
+./deploy/mac/traitors.sh logs        # recent log output, if something seems wrong
+./deploy/mac/traitors.sh uninstall   # remove the background services (game data is kept)
+```
+
+**Make sure the Mac never sleeps and comes back after a power cut:**
+`sudo pmset -a sleep 0 autorestart 1`. You can also use System Settings → Energy → *Prevent automatic sleeping* and *Start up automatically after a power failure*.
+
+The services run as your user, so they start when you're logged in. For a headless Mac mini, turn on **automatic login**: System Settings → Users & Groups → *Automatically log in as*. It's not available when FileVault is on.
+
+To update to a newer version: `git pull`, then `./deploy/mac/traitors.sh restart`.
+
+**Security once it's public:** anyone with the link can open the join page, so the admin password is what protects the game. Use a long one. After 10 wrong password attempts from the same address, that address is locked out for 10 minutes. Everyone else, including you, can still log in. Opening the TV screen or admin panel through the tunnel link also makes the QR code point to the public link.
+
+If the link never shows up: run `logs`. If you have a `~/.cloudflared/config.yml` from an earlier Cloudflare setup, rename it, because quick tunnels won't start while it exists.
+
 ## How a game goes
 
 1. **Lobby:** everyone joins with their name. In the admin panel, click **Randomly assign roles** (about 1 Traitor for every 4–5 players) or set roles by hand. Then click **Start the game**.
@@ -74,5 +119,6 @@ npm test
 ```
 
 - `test/game.test.js` (unit tests): the game rules. They cover role privacy, voting, ties, the vote timer, night, shields, recruitment and the endgame.
-- `test/integration.test.js` (integration tests): these start the real server and play full games over HTTP. They also check the admin password, bad input, a restart in the middle of a game, recovery from a corrupt save file, 40 players voting at once and port fallback.
+- `test/integration.test.js` (integration tests): these start the real server and play full games over HTTP. They also check the admin password and wrong-password lockout, tunnel links, bad input, a restart in the middle of a game, recovery from a corrupt save file, 40 players voting at once and port fallback.
+- `test/mac-setup.test.js`: checks the service files that the Mac setup script generates.
 - `test/browser.test.js` (browser test): an admin, four phones and the TV screen click through the real UI in Chromium. This test is skipped unless Playwright is installed. To run it: `npm install --no-save playwright && npx playwright install chromium`.

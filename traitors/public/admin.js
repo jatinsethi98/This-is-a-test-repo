@@ -40,7 +40,7 @@
       return res;
     } catch (err) {
       toast(err.message, 'error');
-      if (err.status === 401) logout();
+      if (err.status === 401 || err.status === 429) logout();
       return null;
     } finally {
       busy = false;
@@ -72,8 +72,8 @@
         render();
       },
       onError(err) {
-        if (err.status === 401) {
-          toast('Wrong admin password.', 'error');
+        if (err.status === 401 || err.status === 429) {
+          toast(err.message, 'error');
           logout();
         }
       },
