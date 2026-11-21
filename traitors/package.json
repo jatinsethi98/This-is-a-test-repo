@@ -1,0 +1,15 @@
+{
+  "name": "traitors-game",
+  "version": "1.0.0",
+  "description": "Host The Traitors on your local Wi-Fi: players vote from their phones, you run the game from an admin panel.",
+  "private": true,
+  "license": "MIT",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node start.js",
+    "test": "node --test test/game.test.js test/integration.test.js test/browser.test.js",
+    "test:unit": "node --test test/game.test.js",
+    "test:integration": "node --test test/integration.test.js",
+    "test:browser": "node --test test/browser.test.js"
+  }
+}

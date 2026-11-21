@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0f0d12">
+  <title>The Traitors</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="conn" class="conn" hidden>Lost connection to the host — reconnecting…</div>
+  <header class="top">
+    <span class="brand">The Traitors</span>
+    <span id="phase" class="phase-pill">Connecting…</span>
+  </header>
+
+  <main class="wrap">
+    <section id="join-view" hidden>
+      <div class="card">
+        <h1>Join the game</h1>
+        <form id="join-form" class="stack" autocomplete="off">
+          <label for="join-name" class="muted">Your name</label>
+          <input id="join-name" name="name" type="text" maxlength="24" placeholder="e.g. Alex" required>
+          <button class="primary block" type="submit">Join</button>
+        </form>
+      </div>
+      <details class="card">
+        <summary>Already joined on another device? Use your rejoin code</summary>
+        <form id="rejoin-form" class="stack" autocomplete="off" style="margin-top:12px">
+          <input id="rejoin-code" name="code" type="text" maxlength="8" placeholder="Rejoin code (the host can see it)" style="text-transform:uppercase">
+          <button class="block" type="submit">Rejoin</button>
+        </form>
+      </details>
+    </section>
+
+    <section id="game-view" hidden>
+      <div id="announcement"></div>
+      <div id="me"></div>
+      <div id="main"></div>
+      <div id="roster"></div>
+      <div id="history"></div>
+    </section>
+  </main>
+
+  <script src="/common.js"></script>
+  <script src="/player.js"></script>
+</body>
+</html>

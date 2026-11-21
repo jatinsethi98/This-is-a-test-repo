@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f0d12">
+  <title>Traitors — Host</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div id="conn" class="conn" hidden>Lost connection to the server — reconnecting…</div>
+  <header class="top">
+    <span class="brand">The Traitors · Host</span>
+    <span class="row">
+      <span id="phase" class="phase-pill">—</span>
+      <button id="logout" class="small" hidden>Log out</button>
+    </span>
+  </header>
+
+  <main class="wrap wide">
+    <section id="login-view" hidden>
+      <div class="card" style="max-width:420px;margin:40px auto">
+        <h1>Host login</h1>
+        <p class="muted small">The admin password is printed in the terminal window where you started the server.</p>
+        <form id="login-form" class="stack">
+          <input id="login-password" type="password" placeholder="Admin password" autocomplete="current-password" required>
+          <button class="primary block" type="submit">Log in</button>
+        </form>
+      </div>
+    </section>
+
+    <section id="app" hidden>
+      <div id="status"></div>
+
+      <div class="grid-2">
+        <div>
+          <div class="card highlight">
+            <h2>Game flow</h2>
+            <div id="lobby-controls" class="stack" hidden>
+              <p class="muted small" id="lobby-hint"></p>
+              <div class="row">
+                <label for="traitor-count" class="muted small">Number of Traitors</label>
+                <input id="traitor-count" class="compact" type="number" min="1" max="20" value="2" style="width:80px">
+                <button id="assign-random">🎲 Randomly assign roles</button>
+              </div>
+              <p class="muted small">Or set roles by hand in the Players table. Anyone left unassigned becomes Faithful.</p>
+              <button id="start-game" class="primary block">Start the game (players see their roles)</button>
+            </div>
+            <div id="flow"></div>
+          </div>
+          <div id="vote"></div>
+          <div id="night"></div>
+        </div>
+
+        <div>
+          <div class="card">
+            <h2>Players</h2>
+            <div id="players"></div>
+            <form id="add-player" class="row" style="margin-top:12px" autocomplete="off">
+              <input id="add-player-name" class="grow" type="text" maxlength="24" placeholder="Add a player without a phone">
+              <button type="submit">Add</button>
+            </form>
+          </div>
+
+          <div class="card">
+            <h2>Announcement</h2>
+            <div id="announcement-current"></div>
+            <form id="announce-form" class="stack" autocomplete="off">
+              <textarea id="announce-text" rows="2" maxlength="500" placeholder="Shown on every phone and the TV screen"></textarea>
+              <div class="row">
+                <button class="primary" type="submit">Post announcement</button>
+                <button type="button" id="clear-announcement">Clear</button>
+              </div>
+            </form>
+          </div>
+
+          <div class="card">
+            <h2>Settings</h2>
+            <div id="settings"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="history"></div>
+
+      <div class="card">
+        <h2>Danger zone</h2>
+        <div class="row">
+          <select id="end-winner" class="compact">
+            <option value="">Winner: decide automatically</option>
+            <option value="traitors">Winner: Traitors</option>
+            <option value="faithful">Winner: Faithful</option>
+          </select>
+          <button class="danger" id="end-game">End game &amp; reveal all roles</button>
+        </div>
+        <div class="row" style="margin-top:10px">
+          <button id="reset-keep">New game (keep players)</button>
+          <button class="danger" id="reset-wipe">Wipe everything</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="/vendor/qrcode.js"></script>
+  <script src="/common.js"></script>
+  <script src="/admin.js"></script>
+</body>
+</html>
